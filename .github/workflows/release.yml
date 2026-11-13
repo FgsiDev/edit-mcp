@@ -1,5 +1,8 @@
 name: release
 
+# Tag vX.Y.Z -> builds linux (static glibc), macOS and Android/Termux (NDK, bionic)
+# binaries and publishes them with SHA256SUMS. workflow_dispatch only builds artifacts.
+
 on:
   push:
     tags: ["v*"]
@@ -39,9 +42,61 @@ jobs:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
 
+  android:
+    name: build (android-${{ matrix.name }}, Termux)
+    runs-on: ubuntu-24.04
+    # 32-bit legs may fail without blocking the release of the other arches.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: arm64,  triple: aarch64-linux-android,    elf: "ARM aarch64", experimental: false }
+          - { name: x86_64, triple: x86_64-linux-android,     elf: "x86-64",      experimental: false }
+          - { name: arm,    triple: armv7a-linux-androideabi, elf: "ARM, EABI5",  experimental: true }
+          - { name: x86,    triple: i686-linux-android,       elf: "Intel 80386", experimental: true }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+          add-to-path: false
+
+      - name: Build (${{ matrix.name }}, API 24)
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+          TRIPLE: ${{ matrix.triple }}
+          ASSET: edit-mcp-android-${{ matrix.name }}
+          ELF: ${{ matrix.elf }}
+        run: |
+          set -euo pipefail
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          # bionic, dynamic against the system libc; libc++ linked statically so Termux needs nothing extra.
+          # _FILE_OFFSET_BITS=64: 64-bit off_t on the 32-bit targets.
+          "$BIN/${TRIPLE}24-clang++" -std=c++17 -O2 -Wall -Wextra \
+            -D_FILE_OFFSET_BITS=64 -static-libstdc++ \
+            -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now \
+            -o "$ASSET" src/main.cpp
+          "$BIN/llvm-strip" "$ASSET"
+          file "$ASSET"
+          file "$ASSET" | grep -q "$ELF"
+          "$BIN/llvm-readelf" -d "$ASSET" | grep NEEDED
+          if "$BIN/llvm-readelf" -d "$ASSET" | grep -q 'libc++_shared'; then
+            echo "libc++_shared must not be a dependency" >&2
+            exit 1
+          fi
+          ls -lh "$ASSET"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edit-mcp-android-${{ matrix.name }}
+          path: edit-mcp-android-${{ matrix.name }}
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -49,7 +104,7 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Checksums
-        run: cd dist && chmod +x edit-mcp-* && sha256sum edit-mcp-* > SHA256SUMS
+        run: cd dist && chmod +x edit-mcp-* && sha256sum edit-mcp-* > SHA256SUMS && cat SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

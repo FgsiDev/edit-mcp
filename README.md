@@ -12,11 +12,11 @@ make install    # /usr/local/bin/edit-mcp (PREFIX=... to change)
 # or: cmake -B build && cmake --build build
 ```
 
-Termux: `pkg install clang make && make CXX=clang++`.
+Termux (from source): `pkg install clang make git && make CXX=clang++`.
 
 ## Install a release binary
 
-Tagging `vX.Y.Z` builds static binaries (linux-x64, linux-arm64, macos-arm64) via GitHub Actions and attaches them to the release with `SHA256SUMS`. The linux-arm64 build is the one for Termux.
+Tagging `vX.Y.Z` builds binaries via GitHub Actions and attaches them to the release with `SHA256SUMS`: linux-x64 and linux-arm64 (static glibc), macos-arm64, and android-arm64 (Android NDK, bionic). Termux needs the android build: static glibc binaries are killed by Android's seccomp filter (`Bad system call`).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/FgsiDev/edit-mcp/main/install.sh | sh

@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, asset: edit-mcp-linux-x64, static: true }
+          - { os: ubuntu-24.04-arm, asset: edit-mcp-linux-arm64, static: true }
+          - { os: macos-latest, asset: edit-mcp-macos-arm64, static: false }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        shell: bash
+        run: |
+          LDFLAGS=""
+          if [ "${{ matrix.static }}" = "true" ]; then LDFLAGS="-static"; fi
+          make CXXFLAGS="-std=c++17 -O2 -Wall -Wextra" LDFLAGS="$LDFLAGS"
+          mv edit-mcp "${{ matrix.asset }}"
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "./${{ matrix.asset }}" | grep -q replace_lines
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && chmod +x edit-mcp-* && sha256sum edit-mcp-* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

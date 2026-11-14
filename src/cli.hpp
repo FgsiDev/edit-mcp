@@ -308,7 +308,8 @@ inline std::string help() {
          " — local MCP file editor (replace by content, line, position; batch; read)\n"
          "\n"
          "usage:\n"
-         "  edit-mcp                                   run as MCP server over stdio\n"
+         "  edit-mcp [serve] [--root DIR]              run as MCP server over stdio (default)\n"
+         "  edit-mcp --help                            this help\n"
          "  edit-mcp config [--agent A] [--name N] [--root DIR]\n"
          "                                             MCP config for this binary (A: opencode | claude | codex)\n"
          "  edit-mcp install-skill [--target T] [--project] [--dir D]\n"
@@ -369,11 +370,14 @@ inline int run(int argc, char** argv) {
       std::cout << meta::credit() << '\n';
       return 0;
     }
-    if (a.flags.count("help") || (a.pos.empty() && EDIT_ISATTY(0))) {
+    if (a.flags.count("help")) {
       std::cout << help();
       return 0;
     }
-    if (a.pos.empty() || a.pos[0] == "serve") return server::serve(ctx);
+    if (a.pos.empty() || a.pos[0] == "serve") {
+      if (EDIT_ISATTY(0)) std::cerr << "edit-mcp: MCP server on stdio (Ctrl+D to quit, --help for usage)\n";
+      return server::serve(ctx);
+    }
 
     const std::string& command = a.pos[0];
     if (command == "help") {
